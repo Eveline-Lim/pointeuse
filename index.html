@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pointeuse">
+<title>Pointeuse Pro</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0f0f0f;
+  --bg2:#1a1a1a;
+  --bg3:#222;
+  --card:#1e1e1e;
+  --border:#2e2e2e;
+  --text:#f0f0f0;
+  --muted:#888;
+  --hint:#555;
+  --green:#4caf50;
+  --green-bg:#1a2e1a;
+  --green-dim:#2d4a2d;
+  --red:#ef5350;
+  --red-bg:#2e1a1a;
+  --amber:#ffa726;
+  --amber-bg:#2e2210;
+  --blue:#42a5f5;
+  --blue-bg:#101d2e;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bot:env(safe-area-inset-bottom,0px);
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;overflow:hidden}
+.app{display:flex;flex-direction:column;height:100%;padding-top:var(--safe-top)}
+
+/* HEADER */
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:16px 20px 12px;background:var(--bg)}
+.topbar h1{font-size:20px;font-weight:700;letter-spacing:-0.5px}
+.live-time{font-family:'DM Mono',monospace;font-size:13px;color:var(--muted)}
+
+/* TABS */
+.tabs{display:flex;padding:0 16px;gap:4px;border-bottom:1px solid var(--border);background:var(--bg)}
+.tab{flex:1;padding:10px 4px;font-size:13px;font-weight:500;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:'Syne',sans-serif;cursor:pointer;transition:color .15s}
+.tab.active{color:var(--text);border-bottom-color:var(--green)}
+
+/* PANELS */
+.panels{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.panel{display:none;padding:20px 16px;padding-bottom:calc(20px + var(--safe-bot))}
+.panel.active{display:block}
+
+/* TODAY */
+.clock-hero{text-align:center;padding:24px 0 20px}
+.big-clock{font-family:'DM Mono',monospace;font-size:52px;font-weight:400;letter-spacing:-2px;line-height:1}
+.date-sub{font-size:13px;color:var(--muted);margin-top:6px}
+.status-row{display:flex;justify-content:center;margin:16px 0}
+.status-pill{display:inline-flex;align-items:center;gap:7px;padding:6px 16px;border-radius:100px;font-size:13px;font-weight:500}
+.status-pill .dot{width:7px;height:7px;border-radius:50%}
+.status-pill.present{background:var(--green-bg);color:var(--green)}
+.status-pill.present .dot{background:var(--green);animation:blink 1.5s ease-in-out infinite}
+.status-pill.absent{background:var(--bg3);color:var(--muted)}
+.status-pill.absent .dot{background:var(--hint)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+.punch-wrap{display:flex;justify-content:center;margin:20px 0}
+.punch-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;width:140px;height:140px;border-radius:50%;border:none;font-family:'Syne',sans-serif;font-weight:700;font-size:15px;cursor:pointer;transition:transform .1s,opacity .1s;line-height:1.3}
+.punch-btn .punch-icon{font-size:28px;margin-bottom:8px}
+.punch-btn.arrive{background:var(--green);color:#0a1a0a}
+.punch-btn.depart{background:var(--red);color:#1a0a0a}
+.punch-btn.done{background:var(--bg3);color:var(--hint);cursor:not-allowed;border:1px solid var(--border)}
+.punch-btn:not(.done):active{transform:scale(.94)}
+
+.today-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px}
+.metric{background:var(--card);border-radius:12px;padding:14px 16px;border:1px solid var(--border)}
+.metric .m-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.metric .m-val{font-family:'DM Mono',monospace;font-size:22px;font-weight:500}
+.metric .m-val.g{color:var(--green)}
+.metric .m-val.r{color:var(--red)}
+.metric .m-val.d{color:var(--muted)}
+
+/* Cumul banner */
+.cumul-banner{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.cumul-banner .cb-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.cumul-banner .cb-val{font-family:'DM Mono',monospace;font-size:18px;font-weight:500}
+
+/* Section titles */
+.sec-title{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:20px 0 10px}
+
+/* Week nav */
+.week-nav{display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.week-nav button{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-family:'Syne',sans-serif;font-size:13px;color:var(--text);cursor:pointer}
+.week-nav .wlabel{flex:1;text-align:center;font-size:14px;font-weight:500}
+
+/* Stats cards */
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
+.stat-card .s-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.stat-card .s-val{font-family:'DM Mono',monospace;font-size:17px;font-weight:500}
+
+/* Day rows */
+.day-row{display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:8px}
+.day-row:last-child{border-bottom:none}
+.day-name{width:60px;font-size:12px;color:var(--muted)}
+.day-times{flex:1;font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)}
+.day-h{font-family:'DM Mono',monospace;font-size:13px;margin-right:8px}
+.pill{display:inline-block;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:500}
+.pill.g{background:var(--green-bg);color:var(--green)}
+.pill.r{background:var(--red-bg);color:var(--red)}
+.pill.a{background:var(--amber-bg);color:var(--amber)}
+.pill.b{background:var(--blue-bg);color:var(--blue)}
+.pill.d{background:var(--bg3);color:var(--muted)}
+
+/* Chart */
+.chart-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:4px}
+.chart-wrap{position:relative;width:100%;height:160px}
+
+/* Month selectors */
+.month-scroller{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px;scrollbar-width:none}
+.month-scroller::-webkit-scrollbar{display:none}
+.m-btn{flex-shrink:0;padding:6px 14px;border-radius:100px;font-size:12px;font-weight:500;border:1px solid var(--border);background:none;color:var(--muted);font-family:'Syne',sans-serif;cursor:pointer;white-space:nowrap}
+.m-btn.active{background:var(--green);color:#0a1a0a;border-color:var(--green)}
+
+/* Log */
+.log-table{width:100%;border-collapse:collapse;font-size:13px}
+.log-table th{text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;padding:8px;border-bottom:1px solid var(--border)}
+.log-table td{padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:middle}
+.log-table tr:last-child td{border-bottom:none}
+.edit-btn{background:none;border:none;color:var(--hint);cursor:pointer;font-size:15px;padding:4px 6px;border-radius:6px}
+.edit-btn:active{background:var(--bg3)}
+.log-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.btn-danger{background:none;border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-family:'Syne',sans-serif;font-size:12px;color:var(--red);cursor:pointer}
+
+/* Modal */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:flex-end;justify-content:center}
+.overlay.open{display:flex}
+.modal{background:var(--card);border-radius:20px 20px 0 0;padding:24px 20px;padding-bottom:calc(24px + var(--safe-bot));width:100%;max-width:480px;border-top:1px solid var(--border)}
+.modal h2{font-size:16px;font-weight:600;margin-bottom:4px}
+.modal p{font-size:13px;color:var(--muted);margin-bottom:20px}
+.modal label{font-size:12px;color:var(--muted);display:block;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.4px}
+.modal input{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-family:'Syne',sans-serif;font-size:15px;background:var(--bg3);color:var(--text);outline:none}
+.modal input:focus{border-color:var(--green)}
+.modal-actions{display:flex;gap:10px;margin-top:20px}
+.btn-primary{flex:1;padding:13px;background:var(--green);color:#0a1a0a;border:none;border-radius:12px;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer}
+.btn-cancel{padding:13px 20px;background:var(--bg3);color:var(--muted);border:1px solid var(--border);border-radius:12px;font-family:'Syne',sans-serif;font-size:15px;cursor:pointer}
+
+/* Install banner */
+.install-bar{display:none;background:var(--green-bg);border-bottom:1px solid var(--green-dim);padding:10px 16px;align-items:center;gap:10px}
+.install-bar.show{display:flex}
+.install-bar span{flex:1;font-size:13px;color:var(--green)}
+.install-bar button{background:var(--green);color:#0a1a0a;border:none;border-radius:8px;padding:6px 14px;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer}
+.install-bar .ib-close{background:none;border:none;color:var(--green);font-size:18px;cursor:pointer;padding:0 4px}
+
+.empty{text-align:center;padding:40px 16px;color:var(--muted);font-size:14px}
+.empty .ei{font-size:36px;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Install banner -->
+  <div class="install-bar" id="installBar">
+    <span>Installer Pointeuse Pro sur votre écran d'accueil</span>
+    <button onclick="installApp()">Installer</button>
+    <button class="ib-close" onclick="document.getElementById('installBar').classList.remove('show')">✕</button>
+  </div>
+
+  <div class="topbar">
+    <h1>Pointeuse Pro</h1>
+    <span class="live-time" id="liveTime">--:--:--</span>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('today',this)">Aujourd'hui</button>
+    <button class="tab" onclick="showTab('week',this)">Semaine</button>
+    <button class="tab" onclick="showTab('month',this)">Mois</button>
+    <button class="tab" onclick="showTab('log',this)">Journal</button>
+  </div>
+
+  <div class="panels">
+
+    <!-- TODAY -->
+    <div class="panel active" id="panel-today">
+      <div class="cumul-banner" id="cumulBanner">
+        <div>
+          <div class="cb-label">Solde cumulé</div>
+          <div style="font-size:11px;color:var(--hint)" id="cumulSince">–</div>
+        </div>
+        <div class="cb-val" id="cumulVal">–</div>
+      </div>
+      <div class="clock-hero">
+        <div class="big-clock" id="bigClock">--:--:--</div>
+        <div class="date-sub" id="todayLabel"></div>
+      </div>
+      <div class="status-row">
+        <div class="status-pill absent" id="statusPill">
+          <div class="dot"></div>
+          <span id="statusTxt">Non pointé</span>
+        </div>
+      </div>
+      <div class="punch-wrap">
+        <button class="punch-btn arrive" id="punchBtn" onclick="punch()">
+          <span class="punch-icon">⏱</span>
+          <span id="punchTxt">Pointer<br>l'arrivée</span>
+        </button>
+      </div>
+      <div class="today-grid">
+        <div class="metric"><div class="m-label">Arrivée</div><div class="m-val d" id="arrVal">--:--</div></div>
+        <div class="metric"><div class="m-label">Départ</div><div class="m-val d" id="depVal">--:--</div></div>
+        <div class="metric"><div class="m-label">Travaillé</div><div class="m-val d" id="workedVal">0h00</div></div>
+        <div class="metric"><div class="m-label">Solde du jour</div><div class="m-val d" id="dayBalVal">–</div></div>
+      </div>
+    </div>
+
+    <!-- WEEK -->
+    <div class="panel" id="panel-week">
+      <div class="week-nav">
+        <button onclick="changeWeek(-1)">‹</button>
+        <div class="wlabel" id="weekLabel">–</div>
+        <button onclick="changeWeek(1)">›</button>
+      </div>
+      <div class="stat-grid" id="weekStats"></div>
+      <div class="sec-title">Détail par jour</div>
+      <div id="weekDetail"></div>
+      <div class="sec-title" style="margin-top:16px">Graphique</div>
+      <div class="chart-box"><div class="chart-wrap"><canvas id="weekChart"></canvas></div></div>
+    </div>
+
+    <!-- MONTH -->
+    <div class="panel" id="panel-month">
+      <div class="month-scroller" id="monthScroller"></div>
+      <div class="stat-grid" id="monthStats"></div>
+      <div class="sec-title">Heures par jour ouvré</div>
+      <div class="chart-box"><div class="chart-wrap" style="height:180px"><canvas id="monthChart"></canvas></div></div>
+    </div>
+
+    <!-- LOG -->
+    <div class="panel" id="panel-log">
+      <div class="log-header">
+        <div style="font-size:14px;font-weight:500">Toutes les entrées</div>
+        <button class="btn-danger" onclick="clearAll()">Tout effacer</button>
+      </div>
+      <div id="logContent"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- EDIT MODAL -->
+<div class="overlay" id="editOverlay">
+  <div class="modal">
+    <h2>Modifier l'entrée</h2>
+    <p id="editDateDisplay">–</p>
+    <input type="hidden" id="editKey">
+    <label>Date</label>
+    <input type="date" id="editDate">
+    <label>Heure d'arrivée</label>
+    <input type="time" id="editArr">
+    <label>Heure de départ</label>
+    <input type="time" id="editDep">
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Annuler</button>
+      <button class="btn-primary" onclick="saveEdit()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────
+const WORK_MIN = 8 * 60; // 480 min/day
+const WORK_DAYS = [1,2,3,4,5]; // Mon–Fri
+const STORE_KEY = 'pointeuse_v3';
+
+// ── Storage ────────────────────────────────────────────────────────────────
+function getData() { try { return JSON.parse(localStorage.getItem(STORE_KEY)||'{}'); } catch(e){ return {}; } }
+function setData(d) { localStorage.setItem(STORE_KEY, JSON.stringify(d)); }
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function todayKey() { return new Date().toISOString().slice(0,10); }
+function keyToDate(k) { return new Date(k+'T12:00:00'); }
+
+function fmtTime(iso) {
+  if (!iso) return '--:--';
+  return new Date(iso).toTimeString().slice(0,5);
+}
+
+function minutesToH(min) {
+  const a = Math.abs(Math.round(min));
+  return Math.floor(a/60)+'h'+String(a%60).padStart(2,'0');
+}
+
+function signedH(min) {
+  if (min === null || min === undefined) return '–';
+  const s = min >= 0 ? '+' : '-';
+  return s + minutesToH(min);
+}
+
+function calcWorked(entry) {
+  if (!entry || !entry.arrival || !entry.departure) return null;
+  return (new Date(entry.departure) - new Date(entry.arrival)) / 60000;
+}
+
+function isWeekend(key) {
+  return [0,6].includes(keyToDate(key).getDay());
+}
+
+// ── Cumulative balance ─────────────────────────────────────────────────────
+// For each worked day: balance = worked - 480
+// Weekdays with no entry = -480 (absent, unless in the future)
+// We sum from the earliest entry to yesterday
+function computeCumul() {
+  const data = getData();
+  const today = todayKey();
+  const allKeys = Object.keys(data).sort();
+  if (!allKeys.length) return { total: 0, since: null };
+
+  // Find first working day with data
+  const first = allKeys.find(k => !isWeekend(k));
+  if (!first) return { total: 0, since: null };
+
+  let total = 0;
+  // Walk from first day to yesterday
+  const startDate = keyToDate(first);
+  const todayDate = keyToDate(today);
+  const cur = new Date(startDate);
+  while (cur < todayDate) {
+    const key = cur.toISOString().slice(0,10);
+    if (!isWeekend(key)) {
+      const entry = data[key];
+      const worked = calcWorked(entry);
+      if (worked !== null) {
+        total += worked - WORK_MIN;
+      } else {
+        // Absent — count as negative only if past day
+        total -= WORK_MIN;
+      }
+    }
+    cur.setDate(cur.getDate()+1);
+  }
+  return { total, since: first };
+}
+
+// ── Live clock ─────────────────────────────────────────────────────────────
+function tick() {
+  const now = new Date();
+  const t = now.toTimeString().slice(0,8);
+  document.getElementById('liveTime').textContent = t;
+  document.getElementById('bigClock').textContent = t;
+
+  // Real-time worked counter
+  const data = getData();
+  const entry = data[todayKey()];
+  if (entry && entry.arrival && !entry.departure) {
+    const mins = (now - new Date(entry.arrival)) / 60000;
+    document.getElementById('workedVal').textContent = minutesToH(mins);
+    document.getElementById('workedVal').className = 'value';
+    const b = mins - WORK_MIN;
+    const el = document.getElementById('dayBalVal');
+    el.textContent = signedH(b);
+    el.className = 'm-val ' + (b >= 0 ? 'g' : 'r');
+  }
+}
+
+// ── TODAY ──────────────────────────────────────────────────────────────────
+function loadToday() {
+  const data = getData();
+  const key = todayKey();
+  const entry = data[key] || {};
+  const now = new Date();
+  const dayNames = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+  const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  document.getElementById('todayLabel').textContent =
+    dayNames[now.getDay()] + ' ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+
+  // Cumul
+  const { total, since } = computeCumul();
+  const cv = document.getElementById('cumulVal');
+  cv.textContent = signedH(total);
+  cv.className = 'cb-val ' + (total >= 0 ? 'g' : 'r');
+  if (since) {
+    const d = keyToDate(since);
+    document.getElementById('cumulSince').textContent = 'depuis le ' + d.toLocaleDateString('fr-FR',{day:'numeric',month:'long'});
+  }
+
+  const btn = document.getElementById('punchBtn');
+  const pill = document.getElementById('statusPill');
+  const sTxt = document.getElementById('statusTxt');
+
+  document.getElementById('arrVal').textContent = fmtTime(entry.arrival);
+  document.getElementById('depVal').textContent = fmtTime(entry.departure);
+
+  if (!entry.arrival) {
+    btn.className = 'punch-btn arrive';
+    btn.querySelector('.punch-icon').textContent = '▶';
+    document.getElementById('punchTxt').innerHTML = "Pointer<br>l'arrivée";
+    pill.className = 'status-pill absent';
+    sTxt.textContent = 'Non pointé';
+    document.getElementById('workedVal').textContent = '0h00';
+    document.getElementById('workedVal').className = 'm-val d';
+    document.getElementById('dayBalVal').textContent = '–';
+    document.getElementById('dayBalVal').className = 'm-val d';
+  } else if (!entry.departure) {
+    btn.className = 'punch-btn depart';
+    btn.querySelector('.punch-icon').textContent = '■';
+    document.getElementById('punchTxt').innerHTML = "Pointer<br>le départ";
+    pill.className = 'status-pill present';
+    sTxt.textContent = 'En poste';
+  } else {
+    btn.className = 'punch-btn done';
+    btn.querySelector('.punch-icon').textContent = '✓';
+    document.getElementById('punchTxt').innerHTML = "Journée<br>terminée";
+    pill.className = 'status-pill absent';
+    sTxt.textContent = 'Terminé';
+    const worked = calcWorked(entry);
+    document.getElementById('workedVal').textContent = minutesToH(worked);
+    document.getElementById('workedVal').className = 'm-val';
+    const b = worked - WORK_MIN;
+    const bEl = document.getElementById('dayBalVal');
+    bEl.textContent = signedH(b);
+    bEl.className = 'm-val ' + (b >= 0 ? 'g' : 'r');
+  }
+}
+
+function punch() {
+  const data = getData();
+  const key = todayKey();
+  if (!data[key]) data[key] = {};
+  const e = data[key];
+  if (e.departure) return;
+  if (!e.arrival) e.arrival = new Date().toISOString();
+  else e.departure = new Date().toISOString();
+  setData(data);
+  loadToday();
+}
+
+// ── WEEK ───────────────────────────────────────────────────────────────────
+let weekOffset = 0;
+let wChart = null;
+
+function getWeekDays(offset) {
+  const now = new Date();
+  const dow = now.getDay();
+  const mon = new Date(now);
+  mon.setDate(now.getDate() - (dow===0?6:dow-1) + offset*7);
+  mon.setHours(0,0,0,0);
+  return Array.from({length:7},(_,i)=>{
+    const d = new Date(mon); d.setDate(mon.getDate()+i);
+    return d.toISOString().slice(0,10);
+  });
+}
+
+function renderWeek() {
+  const data = getData();
+  const days = getWeekDays(weekOffset);
+  const mon = keyToDate(days[0]);
+  const sun = keyToDate(days[6]);
+  const fmtD = d => d.toLocaleDateString('fr-FR',{day:'numeric',month:'short'});
+  document.getElementById('weekLabel').textContent = fmtD(mon)+' – '+fmtD(sun);
+
+  const DAY_NAMES = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  let totalW=0, totalExp=0, present=0;
+  let chartLabels=[], chartData=[], chartColors=[];
+  let html='';
+
+  days.slice(0,5).forEach((key,i) => {
+    const entry = data[key]||{};
+    const worked = calcWorked(entry);
+    totalExp += WORK_MIN;
+    if (worked!==null) { totalW+=worked; present++; }
+    chartLabels.push(DAY_NAMES[i].slice(0,3));
+    chartData.push(worked!==null ? +(worked/60).toFixed(2) : 0);
+    chartColors.push(worked===null?'#333':worked>=WORK_MIN?'#4caf50':'#ef5350');
+
+    const b = worked!==null ? worked-WORK_MIN : null;
+    let pClass,pTxt;
+    if (!entry.arrival) { pClass='d'; pTxt='Absent'; }
+    else if (!entry.departure) { pClass='a'; pTxt='En cours'; }
+    else if (b>5) { pClass='g'; pTxt=signedH(b); }
+    else if (b<-5) { pClass='r'; pTxt=signedH(b); }
+    else { pClass='b'; pTxt='= 8h00'; }
+
+    html+=`<div class="day-row">
+      <div class="day-name">${DAY_NAMES[i]}</div>
+      <div class="day-times">${fmtTime(entry.arrival)} → ${fmtTime(entry.departure)}</div>
+      <span class="day-h">${worked!==null?minutesToH(worked):'–'}</span>
+      <span class="pill ${pClass}">${pTxt}</span>
+      <button class="edit-btn" onclick="openEdit('${key}')">✎</button>
+    </div>`;
+  });
+
+  const wb = totalW - totalExp;
+  document.getElementById('weekStats').innerHTML=`
+    <div class="stat-card"><div class="s-label">Jours</div><div class="s-val">${present}/5</div></div>
+    <div class="stat-card"><div class="s-label">Total</div><div class="s-val">${minutesToH(totalW)}</div></div>
+    <div class="stat-card"><div class="s-label">Solde</div><div class="s-val" style="color:${wb>=0?'var(--green)':'var(--red)'}">${signedH(wb)}</div></div>
+  `;
+  document.getElementById('weekDetail').innerHTML = html||'<div class="empty"><div class="ei">📋</div>Aucune donnée</div>';
+
+  if(wChart) wChart.destroy();
+  wChart = new Chart(document.getElementById('weekChart'),{
+    type:'bar',
+    data:{labels:chartLabels,datasets:[{data:chartData,backgroundColor:chartColors,borderRadius:4,borderSkipped:false}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},annotation:{}},
+      scales:{
+        y:{min:0,max:11,grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#888',callback:v=>v+'h',font:{size:11}}},
+        x:{grid:{display:false},ticks:{color:'#888',font:{size:12}}}
+      },
+      animation:{duration:300}
+    }
+  });
+}
+
+function changeWeek(d) { weekOffset+=d; renderWeek(); }
+
+// ── MONTH ──────────────────────────────────────────────────────────────────
+let mMonth = new Date().getMonth();
+let mYear = new Date().getFullYear();
+let mChart = null;
+
+function renderMonth() {
+  const data = getData();
+  const MONTHS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  const SHORT_M = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+
+  let scr='';
+  for(let m=0;m<12;m++){
+    scr+=`<button class="m-btn ${m===mMonth?'active':''}" onclick="selectMonth(${m})">${SHORT_M[m]}</button>`;
+  }
+  document.getElementById('monthScroller').innerHTML=scr;
+
+  const first = new Date(mYear,mMonth,1);
+  const last = new Date(mYear,mMonth+1,0);
+  let workDays=0,present=0,totalW=0;
+  const cLabels=[],cData=[],cColors=[];
+
+  for(let d=new Date(first);d<=last;d.setDate(d.getDate()+1)){
+    const dow=d.getDay();
+    if(dow===0||dow===6) continue;
+    workDays++;
+    const key=d.toISOString().slice(0,10);
+    const worked=calcWorked(data[key]||{});
+    cLabels.push(d.getDate());
+    if(worked!==null){
+      present++; totalW+=worked;
+      cData.push(+(worked/60).toFixed(2));
+      cColors.push(worked>=WORK_MIN?'#4caf50':'#ef5350');
+    } else {
+      cData.push(0);
+      cColors.push('#333');
+    }
+  }
+  const totalExp=workDays*WORK_MIN;
+  const mb=totalW-totalExp;
+
+  document.getElementById('monthStats').innerHTML=`
+    <div class="stat-card"><div class="s-label">Jours</div><div class="s-val">${present}/${workDays}</div></div>
+    <div class="stat-card"><div class="s-label">Total</div><div class="s-val">${minutesToH(totalW)}</div></div>
+    <div class="stat-card"><div class="s-label">Solde</div><div class="s-val" style="color:${mb>=0?'var(--green)':'var(--red)'}">${signedH(mb)}</div></div>
+  `;
+
+  if(mChart) mChart.destroy();
+  mChart=new Chart(document.getElementById('monthChart'),{
+    type:'bar',
+    data:{labels:cLabels,datasets:[{data:cData,backgroundColor:cColors,borderRadius:3,borderSkipped:false}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        y:{min:0,max:12,grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#888',callback:v=>v+'h',font:{size:10}}},
+        x:{grid:{display:false},ticks:{color:'#888',font:{size:10},autoSkip:true,maxTicksLimit:12}}
+      },
+      animation:{duration:300}
+    }
+  });
+}
+
+function selectMonth(m){mMonth=m;renderMonth();}
+
+// ── LOG ────────────────────────────────────────────────────────────────────
+function renderLog() {
+  const data = getData();
+  const keys = Object.keys(data).sort().reverse();
+  if(!keys.length){
+    document.getElementById('logContent').innerHTML='<div class="empty"><div class="ei">📋</div>Aucune entrée</div>';
+    return;
+  }
+  let html='<table class="log-table"><thead><tr><th>Date</th><th>Arr.</th><th>Dép.</th><th>Durée</th><th>Solde</th><th></th></tr></thead><tbody>';
+  keys.forEach(key=>{
+    const e=data[key];
+    const w=calcWorked(e);
+    const b=w!==null?w-WORK_MIN:null;
+    const d=keyToDate(key);
+    const dateStr=d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
+    let pC,pT;
+    if(!e.arrival){pC='d';pT='Absent';}
+    else if(!e.departure){pC='a';pT='En cours';}
+    else if(b>5){pC='g';pT=signedH(b);}
+    else if(b<-5){pC='r';pT=signedH(b);}
+    else{pC='b';pT='≈8h';}
+    html+=`<tr>
+      <td>${dateStr}</td>
+      <td style="font-family:'DM Mono',monospace">${fmtTime(e.arrival)}</td>
+      <td style="font-family:'DM Mono',monospace">${fmtTime(e.departure)}</td>
+      <td style="font-family:'DM Mono',monospace">${w!==null?minutesToH(w):'–'}</td>
+      <td><span class="pill ${pC}">${pT}</span></td>
+      <td><button class="edit-btn" onclick="openEdit('${key}')">✎</button></td>
+    </tr>`;
+  });
+  html+='</tbody></table>';
+  document.getElementById('logContent').innerHTML=html;
+}
+
+function clearAll(){
+  if(confirm('Effacer toutes les données ?')){
+    localStorage.removeItem(STORE_KEY);
+    loadToday(); renderLog();
+  }
+}
+
+// ── EDIT MODAL ─────────────────────────────────────────────────────────────
+function openEdit(key){
+  const data=getData();
+  const e=data[key]||{};
+  document.getElementById('editKey').value=key;
+  document.getElementById('editDate').value=key;
+  document.getElementById('editDateDisplay').textContent=keyToDate(key).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
+  document.getElementById('editArr').value=e.arrival?new Date(e.arrival).toTimeString().slice(0,5):'';
+  document.getElementById('editDep').value=e.departure?new Date(e.departure).toTimeString().slice(0,5):'';
+  document.getElementById('editOverlay').classList.add('open');
+}
+
+function closeModal(){document.getElementById('editOverlay').classList.remove('open');}
+
+function saveEdit(){
+  const data=getData();
+  const key=document.getElementById('editDate').value;
+  const arr=document.getElementById('editArr').value;
+  const dep=document.getElementById('editDep').value;
+  if(!data[key]) data[key]={};
+  data[key].arrival=arr?new Date(key+'T'+arr+':00').toISOString():null;
+  data[key].departure=dep?new Date(key+'T'+dep+':00').toISOString():null;
+  setData(data);
+  closeModal();
+  renderLog();
+  loadToday();
+}
+
+// ── TAB NAVIGATION ─────────────────────────────────────────────────────────
+function showTab(id,el){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('panel-'+id).classList.add('active');
+  el.classList.add('active');
+  if(id==='week') renderWeek();
+  if(id==='month') renderMonth();
+  if(id==='log') renderLog();
+}
+
+// ── PWA INSTALL ────────────────────────────────────────────────────────────
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();
+  deferredPrompt=e;
+  document.getElementById('installBar').classList.add('show');
+});
+function installApp(){
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(()=>{
+    deferredPrompt=null;
+    document.getElementById('installBar').classList.remove('show');
+  });
+}
+window.addEventListener('appinstalled',()=>{
+  document.getElementById('installBar').classList.remove('show');
+});
+
+// ── SERVICE WORKER ─────────────────────────────────────────────────────────
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+loadToday();
+setInterval(tick,1000);
+tick();
+
+// Close modal on overlay click
+document.getElementById('editOverlay').addEventListener('click',function(e){
+  if(e.target===this) closeModal();
+});
+</script>
+</body>
+</html>
