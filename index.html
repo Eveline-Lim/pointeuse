@@ -65,13 +65,22 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Syne',
 .status-pill.absent .dot{background:var(--hint)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 
-.punch-wrap{display:flex;justify-content:center;margin:20px 0}
+
 .punch-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;width:140px;height:140px;border-radius:50%;border:none;font-family:'Syne',sans-serif;font-weight:700;font-size:15px;cursor:pointer;transition:transform .1s,opacity .1s;line-height:1.3}
 .punch-btn .punch-icon{font-size:28px;margin-bottom:8px}
 .punch-btn.arrive{background:var(--green);color:#0a1a0a}
-.punch-btn.depart{background:var(--red);color:#1a0a0a}
+.punch-btn.pause{background:var(--amber);color:#1a0f00}
+.punch-btn.depart-long{background:var(--red);color:#1a0a0a}
 .punch-btn.done{background:var(--bg3);color:var(--hint);cursor:not-allowed;border:1px solid var(--border)}
 .punch-btn:not(.done):active{transform:scale(.94)}
+
+/* Long-press ring */
+.punch-wrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;margin:20px 0}
+.longpress-hint{font-size:11px;color:var(--hint);letter-spacing:.3px;height:16px;transition:opacity .2s}
+.ring-wrap{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) translateY(-14px);width:156px;height:156px;pointer-events:none}
+.ring-wrap svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring-track{fill:none;stroke:rgba(255,255,255,.08);stroke-width:4}
+.ring-progress{fill:none;stroke:var(--red);stroke-width:4;stroke-linecap:round;stroke-dasharray:452;stroke-dashoffset:452;transition:stroke-dashoffset .05s linear}
 
 .today-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px}
 .metric{background:var(--card);border-radius:12px;padding:14px 16px;border:1px solid var(--border)}
@@ -200,10 +209,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Syne',
         </div>
       </div>
       <div class="punch-wrap">
-        <button class="punch-btn arrive" id="punchBtn" onclick="punch()">
-          <span class="punch-icon">⏱</span>
+        <button class="punch-btn arrive" id="punchBtn">
+          <span class="punch-icon" id="punchIcon">▶</span>
           <span id="punchTxt">Pointer<br>l'arrivée</span>
         </button>
+        <div class="ring-wrap" id="ringWrap" style="display:none">
+          <svg viewBox="0 0 156 156"><circle class="ring-track" cx="78" cy="78" r="72"/><circle class="ring-progress" id="ringProg" cx="78" cy="78" r="72"/></svg>
+        </div>
+        <div class="longpress-hint" id="lpHint"></div>
       </div>
       <div class="today-grid">
         <div class="metric"><div class="m-label">Arrivée</div><div class="m-val d" id="arrVal">--:--</div></div>
@@ -329,7 +342,7 @@ function computeCumul() {
     const key = cur.toISOString().slice(0,10);
     if (!isWeekend(key)) {
       const entry = data[key];
-      const worked = calcWorked(entry);
+      const worked = calcNetWorked(entry);
       if (worked !== null) {
         total += worked - WORK_MIN;
       } else {
@@ -352,14 +365,17 @@ function tick() {
   // Real-time worked counter
   const data = getData();
   const entry = data[todayKey()];
-  if (entry && entry.arrival && !entry.departure) {
-    const mins = (now - new Date(entry.arrival)) / 60000;
-    document.getElementById('workedVal').textContent = minutesToH(mins);
-    document.getElementById('workedVal').className = 'value';
-    const b = mins - WORK_MIN;
-    const el = document.getElementById('dayBalVal');
-    el.textContent = signedH(b);
-    el.className = 'm-val ' + (b >= 0 ? 'g' : 'r');
+  const state = getState(entry||{});
+  if (state === 'working' || state === 'paused') {
+    const mins = calcNetWorked(entry);
+    if (mins !== null) {
+      document.getElementById('workedVal').textContent = minutesToH(mins);
+      document.getElementById('workedVal').className = 'm-val';
+      const b = mins - WORK_MIN;
+      const el = document.getElementById('dayBalVal');
+      el.textContent = signedH(b);
+      el.className = 'm-val ' + (b >= 0 ? 'g' : 'r');
+    }
   }
 }
 
@@ -387,13 +403,23 @@ function loadToday() {
   const btn = document.getElementById('punchBtn');
   const pill = document.getElementById('statusPill');
   const sTxt = document.getElementById('statusTxt');
+  const icon = document.getElementById('punchIcon');
+  const state = getState(entry);
 
   document.getElementById('arrVal').textContent = fmtTime(entry.arrival);
-  document.getElementById('depVal').textContent = fmtTime(entry.departure);
+  // Show departure or last pause end
+  const pauses = entry.pauses || [];
+  document.getElementById('depVal').textContent = entry.departure ? fmtTime(entry.departure) : '--:--';
 
-  if (!entry.arrival) {
+  // Pause count info
+  const completedPauses = pauses.filter(p=>p.end);
+  const totalPausedMin = completedPauses.reduce((acc,p)=>{
+    return acc + (new Date(p.end)-new Date(p.start))/60000;
+  },0);
+
+  if (state === 'idle') {
     btn.className = 'punch-btn arrive';
-    btn.querySelector('.punch-icon').textContent = '▶';
+    icon.textContent = '▶';
     document.getElementById('punchTxt').innerHTML = "Pointer<br>l'arrivée";
     pill.className = 'status-pill absent';
     sTxt.textContent = 'Non pointé';
@@ -401,19 +427,30 @@ function loadToday() {
     document.getElementById('workedVal').className = 'm-val d';
     document.getElementById('dayBalVal').textContent = '–';
     document.getElementById('dayBalVal').className = 'm-val d';
-  } else if (!entry.departure) {
-    btn.className = 'punch-btn depart';
-    btn.querySelector('.punch-icon').textContent = '■';
-    document.getElementById('punchTxt').innerHTML = "Pointer<br>le départ";
+    document.getElementById('lpHint').textContent = '';
+  } else if (state === 'working') {
+    btn.className = 'punch-btn pause';
+    icon.textContent = '⏸';
+    document.getElementById('punchTxt').innerHTML = "Pause<br><span style='font-size:11px;opacity:.7'>Appui long = départ</span>";
     pill.className = 'status-pill present';
-    sTxt.textContent = 'En poste';
+    sTxt.textContent = completedPauses.length > 0 ? `En poste · ${completedPauses.length} pause${completedPauses.length>1?'s':''}` : 'En poste';
+    document.getElementById('lpHint').textContent = 'Appui court = pause · Appui long = départ';
+  } else if (state === 'paused') {
+    btn.className = 'punch-btn arrive';
+    icon.textContent = '▶';
+    document.getElementById('punchTxt').innerHTML = "Reprendre<br><span style='font-size:11px;opacity:.7'>Appui long = départ</span>";
+    pill.className = 'status-pill absent';
+    sTxt.textContent = 'En pause';
+    document.getElementById('lpHint').textContent = 'Appui court = reprendre · Appui long = départ';
   } else {
+    // done
     btn.className = 'punch-btn done';
-    btn.querySelector('.punch-icon').textContent = '✓';
+    icon.textContent = '✓';
     document.getElementById('punchTxt').innerHTML = "Journée<br>terminée";
     pill.className = 'status-pill absent';
-    sTxt.textContent = 'Terminé';
-    const worked = calcWorked(entry);
+    sTxt.textContent = completedPauses.length > 0 ? `Terminé · ${completedPauses.length} pause${completedPauses.length>1?'s':''}` : 'Terminé';
+    document.getElementById('lpHint').textContent = '';
+    const worked = calcNetWorked(entry);
     document.getElementById('workedVal').textContent = minutesToH(worked);
     document.getElementById('workedVal').className = 'm-val';
     const b = worked - WORK_MIN;
@@ -423,16 +460,172 @@ function loadToday() {
   }
 }
 
+// ── PAUSE / LONG-PRESS DEPART ──────────────────────────────────────────────
+// State machine: 'idle' | 'working' | 'paused' | 'done'
+// entry.pauses = [{start, end}]   (end=null means currently paused)
+// entry.departure = ISO string    (only when truly leaving)
+
+const LONGPRESS_MS = 1500; // hold duration to trigger departure
+let lpTimer = null;
+let lpStart = null;
+let lpRafId = null;
+const CIRCUMFERENCE = 2 * Math.PI * 72; // 452.4
+
+function getState(entry) {
+  if (!entry || !entry.arrival) return 'idle';
+  if (entry.departure) return 'done';
+  const pauses = entry.pauses || [];
+  const last = pauses[pauses.length - 1];
+  if (last && !last.end) return 'paused';
+  return 'working';
+}
+
+function calcNetWorked(entry) {
+  // Total worked = (now or departure) - arrival - sum(pause durations)
+  if (!entry || !entry.arrival) return null;
+  const end = entry.departure ? new Date(entry.departure) : new Date();
+  const arr = new Date(entry.arrival);
+  let pausedMs = 0;
+  const pauses = entry.pauses || [];
+  pauses.forEach(p => {
+    const ps = new Date(p.start);
+    const pe = p.end ? new Date(p.end) : new Date();
+    pausedMs += (pe - ps);
+  });
+  return (end - arr - pausedMs) / 60000;
+}
+
+function startLongPress(e) {
+  const data = getData();
+  const entry = data[todayKey()] || {};
+  const state = getState(entry);
+  if (state !== 'working' && state !== 'paused') return;
+
+  lpStart = Date.now();
+  document.getElementById('ringWrap').style.display = 'block';
+  document.getElementById('lpHint').textContent = 'Maintenir pour quitter la société…';
+
+  function animate() {
+    const elapsed = Date.now() - lpStart;
+    const pct = Math.min(elapsed / LONGPRESS_MS, 1);
+    const offset = CIRCUMFERENCE * (1 - pct);
+    document.getElementById('ringProg').style.strokeDashoffset = offset;
+    if (pct < 1) { lpRafId = requestAnimationFrame(animate); }
+    else { triggerDeparture(); }
+  }
+  lpRafId = requestAnimationFrame(animate);
+  lpTimer = setTimeout(triggerDeparture, LONGPRESS_MS + 50);
+}
+
+function cancelLongPress() {
+  if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+  if (lpRafId) { cancelAnimationFrame(lpRafId); lpRafId = null; }
+  lpStart = null;
+  const ring = document.getElementById('ringWrap');
+  ring.style.display = 'none';
+  document.getElementById('ringProg').style.strokeDashoffset = CIRCUMFERENCE;
+  document.getElementById('lpHint').textContent = '';
+}
+
+function triggerDeparture() {
+  cancelLongPress();
+  const data = getData();
+  const key = todayKey();
+  if (!data[key]) return;
+  const entry = data[key];
+  // Close any open pause first
+  const pauses = entry.pauses || [];
+  const last = pauses[pauses.length - 1];
+  if (last && !last.end) last.end = new Date().toISOString();
+  entry.departure = new Date().toISOString();
+  setData(data);
+  loadToday();
+  if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
+}
+
 function punch() {
   const data = getData();
   const key = todayKey();
   if (!data[key]) data[key] = {};
-  const e = data[key];
-  if (e.departure) return;
-  if (!e.arrival) e.arrival = new Date().toISOString();
-  else e.departure = new Date().toISOString();
+  const entry = data[key];
+  const state = getState(entry);
+
+  if (state === 'idle') {
+    entry.arrival = new Date().toISOString();
+    entry.pauses = [];
+    if (navigator.vibrate) navigator.vibrate(60);
+  } else if (state === 'working') {
+    // Short tap = pause
+    if (!entry.pauses) entry.pauses = [];
+    entry.pauses.push({ start: new Date().toISOString(), end: null });
+    if (navigator.vibrate) navigator.vibrate(40);
+  } else if (state === 'paused') {
+    // Short tap = resume
+    const last = entry.pauses[entry.pauses.length - 1];
+    if (last && !last.end) last.end = new Date().toISOString();
+    if (navigator.vibrate) navigator.vibrate(40);
+  } else {
+    return; // done
+  }
   setData(data);
   loadToday();
+}
+
+// Attach long-press events to button
+function initPunchBtn() {
+  const btn = document.getElementById('punchBtn');
+  btn.addEventListener('click', punch);
+  btn.addEventListener('mousedown', startLongPress);
+  btn.addEventListener('touchstart', e => { e.preventDefault(); startLongPress(e); }, {passive:false});
+  btn.addEventListener('mouseup', cancelLongPress);
+  btn.addEventListener('mouseleave', cancelLongPress);
+  btn.addEventListener('touchend', e => { e.preventDefault(); cancelLongPress(); punch(); });
+  btn.addEventListener('touchcancel', cancelLongPress);
+}
+// Remove duplicate click — punch() called on touchend/click separately
+// Re-attach cleanly:
+function initPunchBtnClean() {
+  const btn = document.getElementById('punchBtn');
+  // Remove any onclick attr
+  btn.removeAttribute('onclick');
+
+  let didLongPress = false;
+
+  function onDown(e) {
+    didLongPress = false;
+    const data = getData();
+    const entry = data[todayKey()] || {};
+    const state = getState(entry);
+    if (state !== 'working' && state !== 'paused') return;
+
+    lpStart = Date.now();
+    document.getElementById('ringWrap').style.display = 'block';
+    document.getElementById('lpHint').textContent = 'Maintenir pour quitter la société…';
+
+    function animate() {
+      const elapsed = Date.now() - lpStart;
+      const pct = Math.min(elapsed / LONGPRESS_MS, 1);
+      document.getElementById('ringProg').style.strokeDashoffset = CIRCUMFERENCE * (1 - pct);
+      if (pct < 1) { lpRafId = requestAnimationFrame(animate); }
+      else { didLongPress = true; triggerDeparture(); }
+    }
+    lpRafId = requestAnimationFrame(animate);
+  }
+
+  function onUp(e) {
+    const wasLong = didLongPress;
+    cancelLongPress();
+    if (!wasLong) punch();
+  }
+
+  function onCancel() { cancelLongPress(); }
+
+  btn.addEventListener('mousedown', onDown);
+  btn.addEventListener('mouseup', onUp);
+  btn.addEventListener('mouseleave', onCancel);
+  btn.addEventListener('touchstart', e => { e.preventDefault(); onDown(e); }, {passive:false});
+  btn.addEventListener('touchend', e => { e.preventDefault(); onUp(e); });
+  btn.addEventListener('touchcancel', onCancel);
 }
 
 // ── WEEK ───────────────────────────────────────────────────────────────────
@@ -466,7 +659,7 @@ function renderWeek() {
 
   days.slice(0,5).forEach((key,i) => {
     const entry = data[key]||{};
-    const worked = calcWorked(entry);
+    const worked = calcNetWorked(entry);
     totalExp += WORK_MIN;
     if (worked!==null) { totalW+=worked; present++; }
     chartLabels.push(DAY_NAMES[i].slice(0,3));
@@ -542,7 +735,7 @@ function renderMonth() {
     if(dow===0||dow===6) continue;
     workDays++;
     const key=d.toISOString().slice(0,10);
-    const worked=calcWorked(data[key]||{});
+    const worked=calcNetWorked(data[key]||{});
     cLabels.push(d.getDate());
     if(worked!==null){
       present++; totalW+=worked;
@@ -591,7 +784,7 @@ function renderLog() {
   let html='<table class="log-table"><thead><tr><th>Date</th><th>Arr.</th><th>Dép.</th><th>Durée</th><th>Solde</th><th></th></tr></thead><tbody>';
   keys.forEach(key=>{
     const e=data[key];
-    const w=calcWorked(e);
+    const w=calcNetWorked(e);
     const b=w!==null?w-WORK_MIN:null;
     const d=keyToDate(key);
     const dateStr=d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
@@ -685,6 +878,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────
+initPunchBtnClean();
 loadToday();
 setInterval(tick,1000);
 tick();
