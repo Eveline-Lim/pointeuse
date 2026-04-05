@@ -164,6 +164,18 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Syne',
 
 .empty{text-align:center;padding:40px 16px;color:var(--muted);font-size:14px}
 .empty .ei{font-size:36px;margin-bottom:12px}
+
+/* Weekend warning modal */
+.weekend-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:300;align-items:center;justify-content:center;padding:24px}
+.weekend-overlay.open{display:flex}
+.weekend-card{background:var(--card);border-radius:20px;padding:28px 24px;width:100%;max-width:360px;border:1px solid var(--border);text-align:center}
+.weekend-card .we-icon{font-size:40px;margin-bottom:16px}
+.weekend-card h2{font-size:18px;font-weight:700;margin-bottom:8px}
+.weekend-card p{font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:24px}
+.weekend-card .we-day{display:inline-block;background:var(--amber-bg);color:var(--amber);padding:4px 14px;border-radius:100px;font-size:13px;font-weight:500;margin-bottom:16px}
+.we-actions{display:flex;flex-direction:column;gap:10px}
+.we-confirm{padding:14px;background:var(--amber);color:#1a0f00;border:none;border-radius:12px;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer;width:100%}
+.we-cancel{padding:14px;background:none;color:var(--muted);border:1px solid var(--border);border-radius:12px;font-family:'Syne',sans-serif;font-size:15px;cursor:pointer;width:100%}
 </style>
 </head>
 <body>
@@ -260,6 +272,20 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Syne',
   </div>
 </div>
 
+<!-- WEEKEND CONFIRMATION -->
+<div class="weekend-overlay" id="weekendOverlay">
+  <div class="weekend-card">
+    <div class="we-icon">🌅</div>
+    <div class="we-day" id="weDayName">Samedi</div>
+    <h2>Jour non travaillé</h2>
+    <p>Aujourd'hui est un jour de repos.<br>Voulez-vous quand même pointer une activité exceptionnelle ?</p>
+    <div class="we-actions">
+      <button class="we-confirm" onclick="confirmWeekend()">Oui, pointer quand même</button>
+      <button class="we-cancel" onclick="closeWeekendModal()">Non, annuler</button>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT MODAL -->
 <div class="overlay" id="editOverlay">
   <div class="modal">
@@ -320,37 +346,43 @@ function isWeekend(key) {
 }
 
 // ── Cumulative balance ─────────────────────────────────────────────────────
-// For each worked day: balance = worked - 480
-// Weekdays with no entry = -480 (absent, unless in the future)
-// We sum from the earliest entry to yesterday
+// Walks from first recorded working day up to and INCLUDING today if done,
+// or up to yesterday if today is still in progress / not started.
 function computeCumul() {
   const data = getData();
   const today = todayKey();
   const allKeys = Object.keys(data).sort();
   if (!allKeys.length) return { total: 0, since: null };
 
-  // Find first working day with data
   const first = allKeys.find(k => !isWeekend(k));
   if (!first) return { total: 0, since: null };
 
+  // Determine end boundary: include today only if departure is recorded
+  const todayEntry = data[today] || {};
+  const todayDone = !!todayEntry.departure;
+
   let total = 0;
-  // Walk from first day to yesterday
   const startDate = keyToDate(first);
-  const todayDate = keyToDate(today);
   const cur = new Date(startDate);
-  while (cur < todayDate) {
+
+  while (true) {
     const key = cur.toISOString().slice(0,10);
+    // Stop after today
+    if (key > today) break;
+    // Stop before today if today not done (don't count partial/ongoing day)
+    if (key === today && !todayDone) break;
+
     if (!isWeekend(key)) {
       const entry = data[key];
       const worked = calcNetWorked(entry);
       if (worked !== null) {
         total += worked - WORK_MIN;
       } else {
-        // Absent — count as negative only if past day
+        // Absent past working day — counts as -8h
         total -= WORK_MIN;
       }
     }
-    cur.setDate(cur.getDate()+1);
+    cur.setDate(cur.getDate() + 1);
   }
   return { total, since: first };
 }
@@ -460,6 +492,30 @@ function loadToday() {
   }
 }
 
+// ── WEEKEND GATE ───────────────────────────────────────────────────────────
+let weekendAuthorized = false; // reset each day on load
+
+function todayIsWeekend() {
+  return [0, 6].includes(new Date().getDay());
+}
+
+function showWeekendModal() {
+  const day = new Date().getDay() === 6 ? 'Samedi' : 'Dimanche';
+  document.getElementById('weDayName').textContent = day;
+  document.getElementById('weekendOverlay').classList.add('open');
+}
+
+function closeWeekendModal() {
+  document.getElementById('weekendOverlay').classList.remove('open');
+}
+
+function confirmWeekend() {
+  weekendAuthorized = true;
+  closeWeekendModal();
+  // Now actually execute the punch that was blocked
+  punch();
+}
+
 // ── PAUSE / LONG-PRESS DEPART ──────────────────────────────────────────────
 // State machine: 'idle' | 'working' | 'paused' | 'done'
 // entry.pauses = [{start, end}]   (end=null means currently paused)
@@ -544,28 +600,36 @@ function triggerDeparture() {
 }
 
 function punch() {
+  // Weekend guard: ask permission before first punch of the day
   const data = getData();
   const key = todayKey();
-  if (!data[key]) data[key] = {};
-  const entry = data[key];
+  const entry = data[key] || {};
   const state = getState(entry);
 
-  if (state === 'idle') {
-    entry.arrival = new Date().toISOString();
-    entry.pauses = [];
+  // Only block on 'idle' state (first punch) on weekends, unless already authorized
+  if (state === 'idle' && todayIsWeekend() && !weekendAuthorized) {
+    showWeekendModal();
+    return;
+  }
+
+  if (!data[key]) data[key] = {};
+  const entry2 = data[key];
+  const state2 = getState(entry2);
+
+  if (state2 === 'idle') {
+    entry2.arrival = new Date().toISOString();
+    entry2.pauses = [];
     if (navigator.vibrate) navigator.vibrate(60);
-  } else if (state === 'working') {
-    // Short tap = pause
-    if (!entry.pauses) entry.pauses = [];
-    entry.pauses.push({ start: new Date().toISOString(), end: null });
+  } else if (state2 === 'working') {
+    if (!entry2.pauses) entry2.pauses = [];
+    entry2.pauses.push({ start: new Date().toISOString(), end: null });
     if (navigator.vibrate) navigator.vibrate(40);
-  } else if (state === 'paused') {
-    // Short tap = resume
-    const last = entry.pauses[entry.pauses.length - 1];
+  } else if (state2 === 'paused') {
+    const last = entry2.pauses[entry2.pauses.length - 1];
     if (last && !last.end) last.end = new Date().toISOString();
     if (navigator.vibrate) navigator.vibrate(40);
   } else {
-    return; // done
+    return;
   }
   setData(data);
   loadToday();
@@ -878,14 +942,18 @@ if('serviceWorker' in navigator){
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────
+weekendAuthorized = false; // always start fresh
 initPunchBtnClean();
 loadToday();
 setInterval(tick,1000);
 tick();
 
-// Close modal on overlay click
+// Close modals on overlay click
 document.getElementById('editOverlay').addEventListener('click',function(e){
   if(e.target===this) closeModal();
+});
+document.getElementById('weekendOverlay').addEventListener('click',function(e){
+  if(e.target===this) closeWeekendModal();
 });
 </script>
 </body>
