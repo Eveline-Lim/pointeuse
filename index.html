@@ -309,7 +309,8 @@ function cumul(){
   const data=gd(),today=tk();
   const keys=Object.keys(data).sort();
   if(!keys.length)return{total:0,since:null};
-  const first=keys.find(k=>!isNW(k));
+  // Find first key with actual arrival data (any day, including NW if punched)
+  const first=keys.find(k=>data[k]&&data[k].arrival);
   if(!first)return{total:0,since:null};
   const done=!!(data[today]||{}).departure;
   let total=0;
@@ -318,11 +319,25 @@ function cumul(){
     const k=cur.getFullYear()+'-'+p2(cur.getMonth()+1)+'-'+p2(cur.getDate());
     if(k>today)break;
     if(k===today&&!done)break;
-    if(!isNW(k)){
-      const w=netWorked(data[k]);
-      if(w!==null)total+=w-WORK_MIN;
-      else if(k<today)total-=WORK_MIN;
+    const entry=data[k];
+    const punched=entry&&entry.arrival; // user actually worked this day
+    if(punched){
+      // Day was worked (even if it's a NW day)
+      const w=netWorked(entry);
+      if(w!==null){
+        // NW days don't subtract WORK_MIN — only count actual hours vs 0 expected
+        // Regular days: compare vs 8h. NW days bonus: count full hours as +
+        if(isNW(k)){
+          total+=w; // all hours are bonus on NW days
+        }else{
+          total+=w-WORK_MIN;
+        }
+      }
+    }else if(!isNW(k)&&k<today){
+      // Normal working day, not punched, in the past → absent = -8h
+      total-=WORK_MIN;
     }
+    // NW day not punched → neutral, no impact
     cur.setDate(cur.getDate()+1);
   }
   return{total,since:first};
@@ -512,26 +527,34 @@ function renderWeek(){
   const DN=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
   let tw=0,te=0,pr=0;const cL=[],cV=[],cC=[];let html='';
   days.forEach((k,i)=>{
-    const hn=holiday(k),nw=i>=5||!!hn,en=data[k]||{};
-    const w=nw?null:netWorked(en);
+    const hn=holiday(k),nwBase=i>=5||!!hn,en=data[k]||{};
+    const hasPunch=!!(en.arrival); // user chose to work this day
+    const nw=nwBase&&!hasPunch;   // only treat as non-working if no data
+    const w=netWorked(en);        // null if no departure
     const isT=k===today,isFu=k>today;
-    if(!nw){te+=WORK_MIN;if(w!==null){tw+=w;pr++;}}
+    // Count punched days (NW or not) but don't count unpunched NW days as expected
+    if(!nwBase){te+=WORK_MIN;if(w!==null){tw+=w;pr++;}}
+    else if(hasPunch&&w!==null){tw+=w;pr++;} // NW but punched: count hours, no expected
     cL.push(DN[i]);
-    if(nw){cV.push(0);cC.push('#181818')}
-    else{cV.push(w!==null?parseFloat((w/60).toFixed(2)):0);cC.push(isFu?'#252525':w===null?'#2d2d2d':w>=WORK_MIN?'#4caf50':'#ef5350')}
+    if(nw&&!hasPunch){cV.push(0);cC.push('#181818')}
+    else{cV.push(w!==null?parseFloat((w/60).toFixed(2)):0);cC.push(isFu?'#252525':w===null?'#2d2d2d':w>=WORK_MIN?'#4caf50':(nwBase?'#ffa726':'#ef5350'))}
     let pC,pT;
-    if(nw){pC='d';pT=hn||DN[i]}
+    if(nw&&!hasPunch){pC='d';pT=hn||DN[i]}
     else if(isFu){pC='d';pT='–'}
     else if(!en.arrival){pC='d';pT='Absent'}
     else if(!en.departure){pC='a';pT='En cours'}
-    else{const b=w-WORK_MIN;pC=b>5?'g':b<-5?'r':'b';pT=b>5?sh(b):b<-5?sh(b):'= 8h'}
+    else{
+      if(nwBase){pC='a';pT=mh(w)+(hn?' · '+hn.split(' ')[0]:' · WE')}
+      else{const b=w-WORK_MIN;pC=b>5?'g':b<-5?'r':'b';pT=b>5?sh(b):b<-5?sh(b):'= 8h'}
+    }
     const dot=isT?'<span style="width:4px;height:4px;border-radius:50%;background:#4caf50;display:inline-block;margin-left:3px;vertical-align:middle"></span>':'';
     const dl=k2d(k).getDate()+' '+k2d(k).toLocaleDateString('fr-FR',{month:'short'});
-    const eb=!nw&&!isFu?`<button class="eb" onclick="openEdit('${k}')">✎</button>`:'';
-    html+=`<div class="dr" style="${nw?'opacity:.28':''}">
+    const eb=(!isFu&&(hasPunch||!nwBase))?`<button class="eb" onclick="openEdit('${k}')">✎</button>`:'';
+    const dim=(nw&&!hasPunch)?'opacity:.28':'';
+    html+=`<div class="dr" style="${dim}">
       <div class="dn">${DN[i]}${dot}</div>
       <div style="width:42px;font-size:10px;color:var(--hint);flex-shrink:0">${dl}</div>
-      <div class="dt">${!nw&&en.arrival?ft(en.arrival)+' → '+ft(en.departure):'–'}</div>
+      <div class="dt">${en.arrival?ft(en.arrival)+' → '+ft(en.departure):'–'}</div>
       <span style="font-family:var(--mono);font-size:11px;flex-shrink:0;margin-right:3px">${w!==null?mh(w):''}</span>
       <span class="pill ${pC}">${pT}</span>${eb}
     </div>`;
@@ -585,29 +608,35 @@ function renderLog(){
     const mon=k2d(wk[0]);
     let wt=0,wp=0;
     const numWd=wk.slice(0,5).filter(k=>!holiday(k)).length;
-    wk.slice(0,5).forEach(k=>{if(holiday(k))return;const w=netWorked(data[k]||{});if(w!==null){wt+=w;wp++;}});
+    wk.forEach(k=>{
+      const en=data[k]||{},w=netWorked(en);
+      if(w!==null){wt+=w;wp++;}
+    });
     const wbal=wt-numWd*WORK_MIN;
     const wbs=wp>0?`<span style="font-family:var(--mono);font-size:11px;color:${wbal>=0?'var(--green)':'var(--red)'}">${sh(wbal)}</span>`:'';
     html+=`<div style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px"><div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">${fmtW(mon)}</div>${wbs}</div><div style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden">`;
     wk.forEach((k,i)=>{
-      const hn=holiday(k),nw=i>=5||!!hn,en=data[k]||{};
-      const w=nw?null:netWorked(en),isT=k===today,isFu=k>today,hasD=!nw&&en.arrival;
+      const hn=holiday(k),nwBase=i>=5||!!hn,en=data[k]||{};
+      const hasPunch=!!(en.arrival);
+      const nw=nwBase&&!hasPunch; // only grey out if no data
+      const w=netWorked(en),isT=k===today,isFu=k>today;
       const d=k2d(k),dn=d.getDate(),mn=d.toLocaleDateString('fr-FR',{month:'short'});
       let pC='d',pT='';
       if(nw){pT=hn||ALL_DN[i]}
       else if(isFu){pT='–'}
       else if(!en.arrival){pT='Absent'}
       else if(!en.departure){pT='En cours';pC='a'}
+      else if(nwBase){pC='a';pT=hn?hn.split(' ')[0]:'WE'}
       else{const b=w-WORK_MIN;pC=b>5?'g':b<-5?'r':'b';pT=b>5?sh(b):b<-5?sh(b):'≈8h'}
       const dot=isT?'<span style="width:4px;height:4px;border-radius:50%;background:var(--green);display:inline-block;margin-left:2px;vertical-align:middle"></span>':'';
       const bt=i===0?'':'border-top:1px solid var(--border);';
       const bg=nw?'background:rgba(0,0,0,.2);':'';
       const dim=nw?'opacity:.25;':'';
-      const eb=!nw&&!isFu?`<button class="eb" onclick="openEdit('${k}')">✎</button>`:'';
+      const eb=(!isFu&&(hasPunch||!nwBase))?`<button class="eb" onclick="openEdit('${k}')">✎</button>`:'';
       html+=`<div style="${bt}${bg}${dim}display:flex;align-items:center;padding:7px 12px;gap:7px">
         <div style="width:24px;text-align:center;flex-shrink:0"><div style="font-size:14px;font-weight:700;color:${isT?'var(--green)':'var(--text)'};line-height:1.1">${dn}</div><div style="font-size:9px;color:var(--hint);text-transform:uppercase">${mn}</div></div>
         <div style="width:30px;font-size:11px;color:${nw?'var(--hint)':'var(--muted)'};font-weight:600;flex-shrink:0">${ALL_DN[i].slice(0,3)}${dot}</div>
-        <div style="flex:1;font-family:var(--mono);font-size:11px;color:var(--hint);overflow:hidden">${hasD?ft(en.arrival)+' → '+ft(en.departure):nw?'':en.arrival?ft(en.arrival)+' → –':'–'}</div>
+        <div style="flex:1;font-family:var(--mono);font-size:11px;color:var(--hint);overflow:hidden">${en.arrival?ft(en.arrival)+' → '+ft(en.departure):nw?'':'–'}</div>
         <div style="font-family:var(--mono);font-size:11px;color:var(--muted);flex-shrink:0;min-width:30px;text-align:right">${w!==null?mh(w):''}</div>
         <span class="pill ${pC}" style="font-size:10px;padding:2px 6px">${pT}</span>${eb}
       </div>`;
